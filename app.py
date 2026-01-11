@@ -1,22 +1,23 @@
 # file: app.py
 from __future__ import annotations
 
-import json, os, re, hashlib, random, sqlite3, datetime
+import os, re, json, hashlib, random, datetime
 from io import StringIO, BytesIO
-from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, NamedTuple
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
+
+# --- Optional libs (app works without them) ---
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
     HAS_PLOTLY = True
 except Exception:
     HAS_PLOTLY = False
 
-# Optional PDF export
 try:
     from reportlab.lib.pagesizes import LETTER
     from reportlab.lib import colors
@@ -33,8 +34,8 @@ MOTIVATIONS = [
     "Cheng","Wu_Wei","Anatta",
     "Relational_Balance","Thymos","Eros",
 ]
-STRATEGIES = ["Conform","Control","Flow","Risk"]                      # subtype only; NOT used in centroid grading
-ORIENTATIONS = ["Cognitive","Energy","Relational","Surrender"]        # derived; NOT used in centroid grading
+STRATEGIES = ["Conform","Control","Flow","Risk"]          # subtype only (NOT used in centroid grading)
+ORIENTATIONS = ["Cognitive","Energy","Relational","Surrender"]  # derived display only
 SELF_SCALES = ["Self_Insight","Self_Serving_Bias"]
 ALL_DIMS = MOTIVATIONS + STRATEGIES + ORIENTATIONS
 ALL_REQ_FOR_Z = ALL_DIMS + SELF_SCALES
@@ -47,6 +48,7 @@ DEFAULT_DOMAIN_MAP = {
     "Relational": ["Relational_Balance","Thymos","Eros"],
 }
 
+# --- Header canonicalization (accept flexible headers in questions/norms/centroids) ---
 HEADER_TO_CANON = {
     "sattva":"Sattva","rajas":"Rajas","tamas":"Tamas",
     "prajna":"Prajna",
@@ -94,33 +96,50 @@ def zparams_from_norms_or_single(person_scales: Dict[str,float], norms_df: Optio
             df[col] = np.nan
     return ZParams.fit(df, list(ALL_REQ_FOR_Z))
 
-# ------------------ Centroids (motivations only) ------------------
-def load_centroids_mot_only(csv_path: str) -> pd.DataFrame:
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Centroid CSV not found: {os.path.abspath(csv_path)}")
-    df = pd.read_csv(csv_path)
+# ------------------ Embedded centroids (latest you provided) ------------------
+# NOTE: Strategies/Orientations present but NOT used in grading. We slice to MOTIVATIONS.
+EMBEDDED_CENTROIDS_CSV = """Archetype,Sattva,Rajas,Tamas,Prajna,Personal_Unconscious,Collective_Unconscious,Cheng,Wu_Wei,Anatta,Relational_Balance,Thymos,Eros,Conform,Control,Flow,Risk,Cognitive,Energy,Relational,Surrender
+Lucerna (Lantern),4.8,6.8,3.8,6.0,4.7,4.5,5.0,4.9,4.3,4.7,6.2,5.0,4.5,4.8,6.0,4.2,4.6,6.8,5.2,4.6
+Arbor (Tree),6.4,4.5,4.7,4.4,4.5,4.8,6.0,4.8,4.3,6.7,5.0,5.3,6.0,4.8,4.2,3.8,4.9,4.9,6.5,5.1
+Sharin (Wheel),5.0,6.2,4.2,4.8,4.5,4.7,5.4,5.8,4.5,5.3,6.5,5.0,5.5,4.8,6.0,4.5,4.7,5.2,6.7,5.2
+Keras (Rhino),4.8,6.2,5.7,4.8,4.4,4.5,6.7,4.7,4.0,4.5,5.2,4.4,4.3,6.0,4.5,5.8,4.6,5.0,4.6,6.7
+Hayabusa (Falcon),4.6,5.3,4.8,4.7,6.7,4.5,6.3,4.4,4.2,4.7,5.7,4.4,5.8,6.0,4.3,4.2,6.7,5.2,4.9,4.8
+Arachna (Spider),4.2,4.8,6.5,4.5,4.7,6.3,4.3,4.8,6.4,4.2,4.8,4.5,3.8,4.3,4.8,6.0,4.8,6.6,4.3,4.9
+Tempus (Hourglass),6.2,5.0,4.3,6.6,5.3,5.0,6.1,4.8,4.5,4.9,4.8,4.7,4.5,6.0,5.8,4.3,6.6,5.1,4.9,5.1
+Simia (Monkey),4.8,5.8,4.2,4.6,4.7,4.8,4.6,6.5,4.3,5.0,5.0,6.2,4.0,4.3,6.0,4.8,4.7,5.0,5.6,6.6
+Polvo (Octopus),4.6,4.7,5.5,6.3,5.4,5.1,4.8,4.5,6.4,4.4,4.6,4.5,4.8,4.8,4.2,4.0,6.5,4.6,4.4,6.5
+Tigre (Tiger),6.5,6.2,4.4,4.9,4.7,5.8,4.9,5.6,4.3,4.8,4.8,4.7,3.9,4.7,4.8,6.0,4.7,6.7,4.8,4.9
+Enguia (Eel),6.3,4.7,4.3,4.5,4.8,4.9,4.8,5.0,4.4,6.5,5.2,6.7,4.6,4.4,5.8,4.3,4.9,5.3,6.6,5.3
+Dacia (Nomad),4.8,6.5,4.5,5.6,4.8,6.7,4.7,5.1,5.2,4.6,6.1,5.5,4.2,4.8,5.8,5.7,6.5,5.0,5.1,5.0
+"""
+
+def load_centroids_embedded() -> pd.DataFrame:
+    df = pd.read_csv(StringIO(EMBEDDED_CENTROIDS_CSV))
+    df = df.set_index("Archetype")
+    return df
+
+def load_centroids_from_csv(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
     if "Archetype" not in df.columns:
         raise ValueError("Centroid CSV must include an 'Archetype' column.")
     df = df.set_index("Archetype")
+    # normalize common header variants
     rename_map = {
-        "Pers.U":"Personal_Unconscious",
-        "Personal Unconscious":"Personal_Unconscious",
-        "Coll.U":"Collective_Unconscious",
-        "Collective Unconscious":"Collective_Unconscious",
+        "Pers.U":"Personal_Unconscious", "Personal Unconscious":"Personal_Unconscious",
+        "Coll.U":"Collective_Unconscious", "Collective Unconscious":"Collective_Unconscious",
         "Wu Wei":"Wu_Wei",
-        "Rel.Bal":"Relational_Balance",
-        "Relational Balance":"Relational_Balance",
+        "Rel.Bal":"Relational_Balance", "Relational Balance":"Relational_Balance",
     }
     df = df.rename(columns=rename_map)
+    return df
+
+def centroids_motivations_only(df: pd.DataFrame) -> pd.DataFrame:
     missing = [m for m in MOTIVATIONS if m not in df.columns]
     if missing:
-        raise KeyError(f"Centroid CSV missing motivation columns: {missing}")
+        raise KeyError(f"Centroid sheet missing motivation columns: {missing}")
     return df[MOTIVATIONS].astype(float).copy()
 
-CENTROID_CSV_PATH = "normalized_archetype_centroids.csv"
-ARCHETYPE_CENTROIDS_MOT = load_centroids_mot_only(CENTROID_CSV_PATH)
-
-# ------------------ Parse questions.txt ------------------
+# ------------------ Questions parsing ------------------
 ITEM_KV_RE = re.compile(r"\[(\w+)\s*=\s*(.*?)\]")
 def _kv_blocks(s: str) -> Dict[str,str]:
     return {k.upper(): v.strip() for k, v in ITEM_KV_RE.findall(s)}
@@ -218,231 +237,121 @@ def strategy_subtype_from_means(str_means: Dict[str, float]) -> dict:
     quadrant = quadrant_label_from_pair(s1, s2)
     return {"top_pair": (s1, s2), "percentages": {s1: p1, s2: p2}, "leaning": leaning, "quadrant": quadrant}
 
-# ------------------ Conduit balance (simple) ------------------
-def conduit_balance(person_scales: dict) -> dict:
-    keys = ["Cognitive", "Energy", "Relational", "Surrender"]
-    raw = {k: float(person_scales.get(k, float("nan"))) for k in keys}
-    vals = [raw[k] for k in keys]
-    if any(np.isnan(vals)):
-        return {"label": "Insufficient data", "percentages": {}, "ordered": []}
-    total = sum(vals) or 1.0
-    shares = {k: v / total for k, v in raw.items()}
-    ordered = sorted(shares.items(), key=lambda kv: (-kv[1], kv[0]))
-    spread = ordered[0][1] - ordered[-1][1]
-    gap12 = ordered[0][1] - ordered[1][1]
-    BALANCE_SPREAD = 0.08
-    NEAR_TIE_GAP = 0.08
-    if spread <= BALANCE_SPREAD:
-        label = "Balanced"
-    elif gap12 <= NEAR_TIE_GAP:
-        label = "Dual-dominant"
-    else:
-        label = "Single-dominant"
-    pct = {k: int(round(v * 100)) for k, v in shares.items()}
-    return {"label": label, "percentages": pct, "ordered": ordered}
-
 # ------------------ Scoring (motivations ONLY; Euclidean) ------------------
 class ScorePieces(NamedTuple):
     probs: Dict[str,float]
     top3: List[Tuple[str,float]]
 
-def score_single_mot_only(person: pd.Series, z: "ZParams",
-                          arch_mot: pd.DataFrame) -> ScorePieces:
+@dataclass
+class DistRow:
+    archetype: str
+    distance: float
+    similarity: float
+
+def score_single_mot_only(person: pd.Series, z: "ZParams", arch_mot: pd.DataFrame) -> Tuple[ScorePieces, pd.DataFrame]:
+    # z-standardize person & centroids in motivation space
     z_person_m = np.array([(person[m] - z.mean[m]) / z.std[m] for m in MOTIVATIONS], dtype=float)
     arch_std = arch_mot.copy()
     for m in MOTIVATIONS:
         arch_std[m] = (arch_std[m] - z.mean.get(m, 0.0)) / (z.std.get(m, 1.0))
     names = list(arch_std.index)
-    vals = []
+    sims, rows = [], []
     for name in names:
         a = arch_std.loc[name, MOTIVATIONS].to_numpy(dtype=float)
         D = euclid(z_person_m, a)
         S = 1.0 / (1.0 + D)
-        vals.append(S)
-    probs_arr = normalize_probs(np.array(vals, dtype=float))
+        sims.append(S)
+        rows.append(DistRow(name, D, S))
+    probs_arr = normalize_probs(np.array(sims, dtype=float))
     order = np.argsort(-probs_arr)
     top3 = [(names[i], float(probs_arr[i])) for i in order[:3]]
     probs = {names[i]: float(probs_arr[i]) for i in range(len(names))}
-    return ScorePieces(probs=probs, top3=top3)
+    dist_df = pd.DataFrame([{"Archetype":r.archetype, "Distance":r.distance, "Similarity":r.similarity} for r in rows])\
+                .sort_values(["Distance","Archetype"])
+    return ScorePieces(probs=probs, top3=top3), dist_df
 
-def distance_table_mot_only(person: pd.Series, z: "ZParams",
-                            arch_mot: pd.DataFrame) -> pd.DataFrame:
-    z_person_m = np.array([(person[m] - z.mean[m]) / z.std[m] for m in MOTIVATIONS], dtype=float)
-    arch_std = arch_mot.copy()
-    for m in MOTIVATIONS:
-        arch_std[m] = (arch_std[m] - z.mean.get(m, 0.0)) / (z.std.get(m, 1.0))
-    rows = []
-    for name in arch_std.index:
-        a = arch_std.loc[name, MOTIVATIONS].to_numpy(dtype=float)
-        D = euclid(z_person_m, a)
-        S = 1.0 / (1.0 + D)
-        rows.append({"Archetype": name, "Distance": D, "Similarity": S})
-    df = pd.DataFrame(rows).sort_values(["Distance","Archetype"])
-    return df
+# ------------------ Plotly figures (guarded) ------------------
+if HAS_PLOTLY:
+    def fig_blend_triangle(top3: List[Tuple[str,float]]) -> "go.Figure":
+        A = np.array([0.0, 0.0]); B = np.array([1.0, 0.0]); C = np.array([0.5, np.sqrt(3)/2])
+        names = [top3[0][0], top3[1][0], top3[2][0]]
+        vals = np.array([top3[0][1], top3[1][1], top3[2][1]], float)
+        s = float(vals.sum()) or 1.0
+        w = vals / s
+        P = w[0]*A + w[1]*B + w[2]*C
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=[A[0],B[0],C[0],A[0]], y=[A[1],B[1],C[1],A[1]], mode="lines", line=dict(width=2)))
+        fig.add_trace(go.Scatter(x=[A[0],B[0],C[0]], y=[A[1],B[1],C[1]], mode="markers+text",
+                                 marker=dict(size=10), text=[names[0],names[1],names[2]], textposition="top center"))
+        fig.add_trace(go.Scatter(x=[P[0]], y=[P[1]], mode="markers", marker=dict(size=14, symbol="star")))
+        fig.update_layout(title="Personality Blend Triangle", xaxis=dict(visible=False), yaxis=dict(visible=False),
+                          showlegend=False, height=350, margin=dict(l=10,r=10,t=40,b=10))
+        return fig
 
-# ------------------ Plotly visuals ------------------
-def fig_blend_triangle(top3: List[Tuple[str,float]]) -> go.Figure:
-    A = np.array([0.0, 0.0]); B = np.array([1.0, 0.0]); C = np.array([0.5, np.sqrt(3)/2])
-    names = [top3[0][0], top3[1][0], top3[2][0]]
-    vals = np.array([top3[0][1], top3[1][1], top3[2][1]], float)
-    s = float(vals.sum()) or 1.0
-    w = vals / s
-    P = w[0]*A + w[1]*B + w[2]*C
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=[A[0],B[0],C[0],A[0]], y=[A[1],B[1],C[1],A[1]], mode="lines", line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=[A[0],B[0],C[0]], y=[A[1],B[1],C[1]], mode="markers+text",
-                             marker=dict(size=10), text=[names[0],names[1],names[2]], textposition="top center"))
-    fig.add_trace(go.Scatter(x=[P[0]], y=[P[1]], mode="markers", marker=dict(size=14, symbol="star")))
-    fig.update_layout(title="Personality Blend Triangle", xaxis=dict(visible=False), yaxis=dict(visible=False),
-                      showlegend=False, height=350, margin=dict(l=10,r=10,t=40,b=10))
-    return fig
+    def fig_strategy_compass(str_means: Dict[str, float], sub: dict) -> "go.Figure":
+        r = [str_means["Control"], str_means["Conform"], str_means["Flow"], str_means["Risk"], str_means["Control"]]
+        theta = ["Control","Conform","Flow","Risk","Control"]
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(r=r, theta=theta, fill='toself', name="Strategies"))
+        s1, s2 = sub["top_pair"]
+        ltxt = f"{sub['quadrant']} — {s1} {sub['percentages'][s1]*100:.0f}% + {s2} {sub['percentages'][s2]*100:.0f}% ({sub['leaning']})"
+        fig.update_layout(title="Control–Flow Compass",
+                          polar=dict(radialaxis=dict(range=[1,7], showticklabels=True)),
+                          height=350, margin=dict(l=10,r=10,t=40,b=10), showlegend=False,
+                          annotations=[dict(text=ltxt, x=0.5, y=1.15, xref="paper", yref="paper", showarrow=False)])
+        return fig
 
-def fig_strategy_compass(str_means: Dict[str, float], sub: dict) -> go.Figure:
-    r = [str_means["Control"], str_means["Conform"], str_means["Flow"], str_means["Risk"], str_means["Control"]]
-    theta = ["Control","Conform","Flow","Risk","Control"]
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(r=r, theta=theta, fill='toself', name="Strategies"))
-    s1, s2 = sub["top_pair"]
-    ltxt = f"{sub['quadrant']} — {s1} {sub['percentages'][s1]*100:.0f}% + {s2} {sub['percentages'][s2]*100:.0f}% ({sub['leaning']})"
-    fig.update_layout(title="Control–Flow Compass",
-                      polar=dict(radialaxis=dict(range=[1,7], showticklabels=True)),
-                      height=350, margin=dict(l=10,r=10,t=40,b=10), showlegend=False,
-                      annotations=[dict(text=ltxt, x=0.5, y=1.15, xref="paper", yref="paper", showarrow=False)])
-    return fig
+    def fig_confidence_curves(si_mean: float, ssb_mean: float, C: float) -> "go.Figure":
+        x = np.linspace(1,7,241); sigma = 1.2
+        def pdf(mu): return np.exp(-0.5*((x-mu)/sigma)**2)
+        y_si = pdf(si_mean); y_ssb = pdf(ssb_mean)
+        y_si /= y_si.max() or 1.0; y_ssb /= y_ssb.max() or 1.0
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=x, y=y_si, mode="lines", name="Self Insight", fill='tozeroy', opacity=0.5))
+        fig.add_trace(go.Scatter(x=x, y=y_ssb, mode="lines", name="Self-Serving Bias", fill='tozeroy', opacity=0.5))
+        fig.update_layout(title=f"Confidence Calibration — Index: {C:.3f}",
+                          xaxis_title="Scale (1–7)", yaxis_title="Relative Density",
+                          height=350, margin=dict(l=10,r=10,t=40,b=10))
+        fig.add_annotation(text="Metacognitive Accuracy Zone = overlap", x=4, y=0.9, showarrow=False)
+        return fig
 
-def fig_confidence_curves(si_mean: float, ssb_mean: float, C: float) -> go.Figure:
-    x = np.linspace(1,7,241); sigma = 1.2
-    def pdf(mu): return np.exp(-0.5*((x-mu)/sigma)**2)
-    y_si = pdf(si_mean); y_ssb = pdf(ssb_mean)
-    y_si /= y_si.max() or 1.0; y_ssb /= y_ssb.max() or 1.0
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=y_si, mode="lines", name="Self Insight", fill='tozeroy', opacity=0.5))
-    fig.add_trace(go.Scatter(x=x, y=y_ssb, mode="lines", name="Self-Serving Bias", fill='tozeroy', opacity=0.5))
-    fig.update_layout(title=f"Confidence Calibration — Index: {C:.3f}",
-                      xaxis_title="Scale (1–7)", yaxis_title="Relative Density",
-                      height=350, margin=dict(l=10,r=10,t=40,b=10))
-    fig.add_annotation(text="Metacognitive Accuracy Zone = overlap", x=4, y=0.9, showarrow=False)
-    return fig
+    def fig_motivation_spectrum(series: pd.Series, label: str) -> "go.Figure":
+        s = series.sort_values(ascending=True)
+        lo = 1 if s.min() >= 1 else min(1, float(s.min())-0.2)
+        hi = 7 if s.max() <= 7 else max(7, float(s.max())+0.2)
+        fig = go.Figure(go.Bar(x=s.values, y=s.index, orientation='h'))
+        fig.update_layout(title=f"12-Bar Motivation Spectrum ({label})",
+                          xaxis=dict(range=[lo, hi]),
+                          height=420, margin=dict(l=80,r=10,t=40,b=10), showlegend=False)
+        return fig
 
-def fig_motivation_spectrum(series: pd.Series, label: str) -> go.Figure:
-    s = series.sort_values(ascending=True)
-    lo = 1 if s.min() >= 1 else min(1, float(s.min())-0.2)
-    hi = 7 if s.max() <= 7 else max(7, float(s.max())+0.2)
-    fig = go.Figure(go.Bar(x=s.values, y=s.index, orientation='h'))
-    fig.update_layout(title=f"12-Bar Motivation Spectrum ({label})",
-        xaxis=dict(range=[lo, hi]),
-        height=420, margin=dict(l=80,r=10,t=40,b=10), showlegend=False)
-    return fig
+    def fig_motivation_wheel(series: pd.Series, label: str) -> "go.Figure":
+        names = list(series.index)
+        vals = [float(series.get(n, np.nan)) for n in names]
+        theta = np.linspace(0, 360, num=len(names), endpoint=False)
+        fig = go.Figure()
+        fig.add_trace(go.Barpolar(r=vals, theta=theta, text=names,
+                                  hovertext=[f"{n}: {v:.2f}" for n,v in zip(names, vals)], hoverinfo="text"))
+        fig.update_layout(title=f"Motivational Wheel ({label})",
+                          polar=dict(radialaxis=dict(range=[1,7])),
+                          height=420, margin=dict(l=10,r=10,t=40,b=10), showlegend=False)
+        return fig
 
-def fig_motivation_wheel(series: pd.Series, label: str) -> go.Figure:
-    names = list(series.index)
-    vals = [float(series.get(n, np.nan)) for n in names]
-    theta = np.linspace(0, 360, num=len(names), endpoint=False)
-    fig = go.Figure()
-    fig.add_trace(go.Barpolar(r=vals, theta=theta, text=names,
-                              hovertext=[f"{n}: {v:.2f}" for n,v in zip(names, vals)], hoverinfo="text"))
-    fig.update_layout(title=f"Motivational Wheel ({label})",
-                      polar=dict(radialaxis=dict(range=[1,7])),
-                      height=420, margin=dict(l=10,r=10,t=40,b=10), showlegend=False)
-    return fig
-
-def fig_centroid_heatmap(centroids_df: pd.DataFrame, normalize: bool = False) -> go.Figure:
-    heat = centroids_df[MOTIVATIONS].astype(float)
-    title = "Archetype × Motivation Centroids (1–7)"; zmin, zmax = 1, 7
-    if normalize:
-        heat = (heat - heat.mean(axis=0)) / (heat.std(axis=0) + EPS)
-        title = "Archetype × Motivation (Column Z-normalized)"
-        zmin, zmax = float(heat.min()), float(heat.max())
-    fig = px.imshow(heat, x=heat.columns, y=heat.index, color_continuous_scale="Viridis",
-                    aspect="auto", origin="upper", zmin=zmin, zmax=zmax,
-                    labels=dict(color="Score"), title=title)
-    fig.update_layout(height=520, margin=dict(l=10, r=10, t=40, b=10), xaxis=dict(side="top"))
-    return fig
-
-# ------------------ DB (SQLite) ------------------
-DB_PATH = os.getenv("RESULTS_DB_PATH", "data/results.db")
-
-def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts TEXT NOT NULL,
-            participant_id TEXT,
-            primary_archetype TEXT, primary_prob REAL,
-            secondary_archetype TEXT, secondary_prob REAL,
-            tertiary_archetype TEXT, tertiary_prob REAL,
-            confidence REAL, si_mean REAL, ssb_mean REAL,
-            strategy_pair TEXT, strategy_pct1 REAL, strategy_pct2 REAL,
-            strategy_leaning TEXT, strategy_quadrant TEXT,
-            Sattva REAL, Rajas REAL, Tamas REAL,
-            Prajna REAL, Personal_Unconscious REAL, Collective_Unconscious REAL,
-            Cheng REAL, Wu_Wei REAL, Anatta REAL,
-            Relational_Balance REAL, Thymos REAL, Eros REAL
-        )
-    """)
-    conn.commit(); conn.close()
-
-def save_result_to_db(participant_id: str,
-                      top3: List[Tuple[str,float]],
-                      C: float, si_mean: float, ssb_mean: float,
-                      subtype: dict,
-                      mot_means: Dict[str, float]):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    (p1, p1v), (p2, p2v), (p3, p3v) = top3
-    s1, s2 = subtype["top_pair"]
-    pct1 = float(subtype["percentages"][s1])
-    pct2 = float(subtype["percentages"][s2])
-    cur.execute("""
-        INSERT INTO results (
-            ts, participant_id,
-            primary_archetype, primary_prob,
-            secondary_archetype, secondary_prob,
-            tertiary_archetype, tertiary_prob,
-            confidence, si_mean, ssb_mean,
-            strategy_pair, strategy_pct1, strategy_pct2,
-            strategy_leaning, strategy_quadrant,
-            Sattva, Rajas, Tamas, Prajna, Personal_Unconscious, Collective_Unconscious,
-            Cheng, Wu_Wei, Anatta, Relational_Balance, Thymos, Eros
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        datetime.datetime.utcnow().isoformat(timespec="seconds"),
-        participant_id,
-        p1, float(p1v),
-        p2, float(p2v),
-        p3, float(p3v),
-        float(C), float(si_mean), float(ssb_mean),
-        f"{s1}+{s2}", pct1, pct2,
-        subtype["leaning"], subtype["quadrant"],
-        float(mot_means.get("Sattva", np.nan)),
-        float(mot_means.get("Rajas", np.nan)),
-        float(mot_means.get("Tamas", np.nan)),
-        float(mot_means.get("Prajna", np.nan)),
-        float(mot_means.get("Personal_Unconscious", np.nan)),
-        float(mot_means.get("Collective_Unconscious", np.nan)),
-        float(mot_means.get("Cheng", np.nan)),
-        float(mot_means.get("Wu_Wei", np.nan)),
-        float(mot_means.get("Anatta", np.nan)),
-        float(mot_means.get("Relational_Balance", np.nan)),
-        float(mot_means.get("Thymos", np.nan)),
-        float(mot_means.get("Eros", np.nan)),
-    ))
-    conn.commit(); conn.close()
-
-def load_all_results() -> pd.DataFrame:
-    if not os.path.exists(DB_PATH):
-        return pd.DataFrame()
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM results ORDER BY ts DESC, id DESC", conn)
-    conn.close()
-    return df
+    def fig_centroid_heatmap(centroids_df: pd.DataFrame, normalize: bool = False) -> "go.Figure":
+        heat = centroids_df[MOTIVATIONS].astype(float)
+        title = "Archetype × Motivation Centroids (1–7)"; zmin, zmax = 1, 7
+        if normalize:
+            heat = (heat - heat.mean(axis=0)) / (heat.std(axis=0) + EPS)
+            title = "Archetype × Motivation (Column Z-normalized)"
+            zmin, zmax = float(heat.min()), float(heat.max())
+        fig = px.imshow(heat, x=heat.columns, y=heat.index, color_continuous_scale="Viridis",
+                        aspect="auto", origin="upper", zmin=zmin, zmax=zmax,
+                        labels=dict(color="Score"), title=title)
+        fig.update_layout(height=520, margin=dict(l=10, r=10, t=40, b=10), xaxis=dict(side="top"))
+        return fig
 
 # ------------------ Master CSV ------------------
 RESULTS_CSV_PATH = os.getenv("RESULTS_CSV_PATH", "data/results_master.csv")
-
 def init_csv() -> None:
     folder = os.path.dirname(RESULTS_CSV_PATH) or "."
     os.makedirs(folder, exist_ok=True)
@@ -455,6 +364,8 @@ def save_result_to_csv(
     ssb_mean: float,
     subtype: dict,
     mot_means: dict[str, float],
+    archetype_probs: dict[str, float],
+    archetype_order: list[str],
 ) -> None:
     (p1, p1v), (p2, p2v), (p3, p3v) = top3
     s1, s2 = subtype["top_pair"]
@@ -470,6 +381,7 @@ def save_result_to_csv(
         "strategy_pair": f"{s1}+{s2}",
         "strategy_pct1": pct1, "strategy_pct2": pct2,
         "strategy_leaning": subtype["leaning"], "strategy_quadrant": subtype["quadrant"],
+        # 12 motivations (means)
         "Sattva": float(mot_means.get("Sattva", np.nan)),
         "Rajas": float(mot_means.get("Rajas", np.nan)),
         "Tamas": float(mot_means.get("Tamas", np.nan)),
@@ -483,6 +395,9 @@ def save_result_to_csv(
         "Thymos": float(mot_means.get("Thymos", np.nan)),
         "Eros": float(mot_means.get("Eros", np.nan)),
     }
+    # add all archetype probabilities
+    for name in archetype_order:
+        row[f"Prob_{name}"] = float(archetype_probs.get(name, np.nan))
     exists = os.path.exists(RESULTS_CSV_PATH)
     df = pd.DataFrame([row])
     df.to_csv(RESULTS_CSV_PATH, mode="a", header=not exists, index=False, encoding="utf-8")
@@ -492,29 +407,37 @@ st.set_page_config(page_title="Motivational Archetypes – Test", page_icon="�
 st.title("🧭 Motivational Archetypes – Test")
 
 with st.sidebar:
+    st.markdown("**Data sources**")
     q_up = st.file_uploader("Override questions.txt (optional)", type=["txt"])
     norms_up = st.file_uploader("Optional norms.csv (for z-standardization)", type=["csv"])
+    centroids_up = st.file_uploader("Optional centroids CSV (override embedded)", type=["csv"])
+    st.markdown("---")
     participant_id = st.text_input("Participant ID", value="P001")
     ranking_mode = st.selectbox("Motivation ranking metric", ["Raw means (1–7)", "Z-scores (vs norms)"])
-    st.divider()
-    st.caption("Admin")
-    show_saved = st.checkbox("Show saved results (DB)", value=False)
-    allow_download = st.checkbox("Enable CSV download of saved table", value=True)
-    st.caption(f"Master CSV path: `{RESULTS_CSV_PATH}`")
+    st.caption(f"Master CSV: `{RESULTS_CSV_PATH}`")
 
 def load_questions_from_repo() -> Dict:
-    q_path = Path(os.getenv("QUESTIONS_PATH", "questions.txt"))
-    if not q_path.exists():
-        raise FileNotFoundError(f"questions file not found at: {q_path.resolve()}")
-    text = q_path.read_text(encoding="utf-8").lstrip("\ufeff")
+    q_path = os.getenv("QUESTIONS_PATH", "questions.txt")
+    if not os.path.exists(q_path):
+        raise FileNotFoundError(f"questions file not found at: {os.path.abspath(q_path)}")
+    text = open(q_path, "r", encoding="utf-8").read().lstrip("\ufeff")
     return parse_txt_questions(text)
 
+# questions
 spec = parse_txt_questions(q_up.read().decode("utf-8")) if q_up is not None else load_questions_from_repo()
 items: List[Dict] = list(spec.get("questions", []))
 if not items:
-    st.error("No items parsed. Check your headers and items.")
+    st.error("No items parsed. Check headers/items in questions.txt.")
     st.stop()
 
+# centroids
+if centroids_up is not None:
+    centroids_df_full = load_centroids_from_csv(centroids_up)
+else:
+    centroids_df_full = load_centroids_embedded()
+ARCHETYPE_CENTROIDS_MOT = centroids_motivations_only(centroids_df_full)
+
+# stable shuffle per participant + spec
 def stable_shuffle(items: List[Dict], pid: str, spec_obj: Dict) -> List[Dict]:
     spec_bytes = json.dumps({k:v for k,v in spec_obj.items()}, sort_keys=True).encode("utf-8")
     seed_hex = hashlib.sha256((pid + "|").encode("utf-8") + spec_bytes).hexdigest()[:16]
@@ -538,7 +461,7 @@ def value_to_label(item: Dict, val: int) -> str:
         return [L, f"Somewhat {L}", "Neutral", f"Somewhat {R}", R][idx]
     return ""
 
-# Questionnaire
+# questionnaire UI
 responses: Dict[str,int] = {}
 scale_defaults = spec.get("scale", {"min":1,"max":7,"step":1})
 st.subheader("📝 Questionnaire")
@@ -547,44 +470,25 @@ for it in shuffled:
     vmax = int(it.get("max", scale_defaults.get("max", 7)))
     step = int(it.get("step", scale_defaults.get("step", 1)))
     default_val = vmin + ((vmax - vmin) // (2 * step)) * step
-
     c1, c2 = st.columns([2, 3])
     with c1: st.markdown(f"**{it['text']}**")
     with c2:
-        current_val = st.session_state.get(it["id"], default_val)
-        curr_label = value_to_label(it, current_val)
+        cur = st.session_state.get(it["id"], default_val)
+        curr_label = value_to_label(it, cur)
         if curr_label:
             st.markdown(f"<div style='font-size:0.9rem;opacity:.8;margin-bottom:-0.5rem'><b>{curr_label}</b></div>", unsafe_allow_html=True)
         elif it.get("L") or it.get("R"):
             st.markdown(f"<div style='font-size:0.9rem;opacity:.7;margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>", unsafe_allow_html=True)
         val = st.slider(label="", min_value=vmin, max_value=vmax, step=step,
-                        value=current_val, key=it["id"],
+                        value=cur, key=it["id"],
                         help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')} ↔ {it.get('R','')}")
     st.divider()
     responses[it["id"]] = val
 
 if not st.button("Compute Results"):
-    # Admin viewer
-    if show_saved:
-        init_db()
-        saved_df = load_all_results()
-        st.subheader("📚 Saved results (DB)")
-        if saved_df.empty:
-            st.info("No saved records yet.")
-        else:
-            st.dataframe(saved_df, use_container_width=True)
-            if allow_download:
-                buf = StringIO(); saved_df.to_csv(buf, index=False)
-                st.download_button("Download saved_results.csv", buf.getvalue(), "saved_results.csv", "text/csv")
-    # Master CSV download if exists
-    if os.path.exists(RESULTS_CSV_PATH):
-        with open(RESULTS_CSV_PATH, "rb") as f:
-            st.download_button("Download master results CSV", f.read(), file_name="results_master.csv", mime="text/csv")
-    else:
-        st.caption("Master CSV not created yet.")
     st.stop()
 
-# Aggregate
+# aggregate
 person_scales = aggregate_to_scales(responses, spec)
 derive_orientations(person_scales)
 
@@ -593,13 +497,14 @@ if missing_dims:
     st.error(f"Missing responses for: {missing_dims}")
     st.stop()
 
-# Confidence (SSB reversed; SI normal)
+# confidence (Self Insight normal; Self-Serving Bias reversed)
 def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str]:
-    si_n  = (float(si)  - 1.0) / 6.0
-    ssb_n = (7.0 - float(ssb)) / 6.0
+    si_n  = (float(si)  - 1.0) / 6.0       # 1→0, 7→1
+    ssb_n = (7.0 - float(ssb)) / 6.0       # 1→1, 7→0 (reversed)
     C = max(0.0, min(1.0, 0.5 * (si_n + ssb_n)))
     level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
     return C, level
+
 si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
 ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
 si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
@@ -609,11 +514,11 @@ if np.isnan(si_mean) or np.isnan(ssb_mean):
     st.stop()
 C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
 
-# Strategy subtype (display only)
+# strategy subtype (only for display)
 str_means = {d: direct_mean_for_dim(responses, spec, d) for d in STRATEGIES}
 sub = strategy_subtype_from_means(str_means)
 
-# Norms (optional z)
+# optional norms for z
 norms_df = None
 if norms_up is not None:
     norms_df = pd.read_csv(norms_up)
@@ -621,24 +526,24 @@ if norms_up is not None:
     have = [c for c in ren if c in norms_df.columns]
     if have: norms_df = norms_df.rename(columns={c: ren[c] for c in have})
 
-# Scoring (motivations only)
+# scoring (motivations only)
 z = zparams_from_norms_or_single(person_scales, norms_df)
 person_row = pd.Series({**person_scales, "participant_id": participant_id})
-res = score_single_mot_only(person_row, z, ARCHETYPE_CENTROIDS_MOT)
-dist_df = distance_table_mot_only(person_row, z, ARCHETYPE_CENTROIDS_MOT)
+score, dist_df = score_single_mot_only(person_row, z, ARCHETYPE_CENTROIDS_MOT)
 
-# Results
+# results
+probs = pd.Series(score.probs).sort_values(ascending=False).rename("probability")
+(p1,p1v),(p2,p2v),(p3,p3v) = score.top3
+
 def top3_percentages(top3: List[Tuple[str,float]]) -> List[Tuple[str,int]]:
     vals = [p for _, p in top3]; s = sum(vals) or 1.0
     raw = [p / s * 100.0 for p in vals]
     a = int(round(raw[0])); b = int(round(raw[1])); c = 100 - a - b
     return [(top3[0][0], a), (top3[1][0], b), (top3[2][0], c)]
+mix = top3_percentages(score.top3)
+mix_text = " · ".join([f"{pct}% {name}" for name, pct in mix])
 
-probs = pd.Series(res.probs).sort_values(ascending=False).rename("probability")
-(p1,p1v),(p2,p2v),(p3,p3v) = res.top3
-mix = top3_percentages(res.top3); mix_text = " · ".join([f"{pct}% {name}" for name, pct in mix])
-
-# Motivation ranking
+# motivation ranking display series
 if ranking_mode.startswith("Z-scores"):
     mot_series = pd.Series({m: (person_scales[m]-z.mean[m])/z.std[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("z")
     mot_df = mot_series.to_frame(); score_col_name = "z"; mot_label = "Z-scores"
@@ -647,26 +552,21 @@ else:
     mot_df = mot_series.to_frame(); score_col_name = "mean"; mot_label = "Raw means (1–7)"
 mot_df["rank"] = np.arange(1, len(mot_df)+1)
 
-# -------- Save to DB and Master CSV --------
-init_db()
-save_result_to_db(
-    participant_id=participant_id,
-    top3=res.top3,
-    C=C, si_mean=si_mean, ssb_mean=ssb_mean,
-    subtype=sub,
-    mot_means={m: person_scales[m] for m in MOTIVATIONS}
-)
+# ------------ Save to master CSV ------------
 init_csv()
 save_result_to_csv(
     participant_id=participant_id,
-    top3=res.top3,
+    top3=score.top3,
     C=C, si_mean=si_mean, ssb_mean=ssb_mean,
     subtype=sub,
-    mot_means={m: person_scales[m] for m in MOTIVATIONS}
+    mot_means={m: person_scales[m] for m in MOTIVATIONS},
+    archetype_probs=score.probs,
+    archetype_order=list(ARCHETYPE_CENTROIDS_MOT.index)
 )
 
-# Layout
+# ------------------ Layout ------------------
 left, right = st.columns([1,1])
+
 with left:
     st.subheader("🏆 Top Archetypes")
     st.metric("Primary", p1, f"{p1v:.3f}")
@@ -689,32 +589,29 @@ with left:
     st.table(inline_df)
 
     with st.expander("🎨 Show visuals"):
-        st.plotly_chart(fig_blend_triangle(res.top3), use_container_width=True)
-        st.plotly_chart(fig_strategy_compass(str_means, sub), use_container_width=True)
-        st.plotly_chart(fig_confidence_curves(si_mean, ssb_mean, C), use_container_width=True)
-        tabs = st.tabs(["12-Bar Spectrum", "Motivational Wheel", "Centroid Heatmap"])
-        with tabs[0]:
-            st.plotly_chart(fig_motivation_spectrum(mot_series.rename("score"), mot_label), use_container_width=True)
-        with tabs[1]:
-            st.plotly_chart(fig_motivation_wheel(mot_series.rename("score"), mot_label), use_container_width=True)
-        with tabs[2]:
-            st.plotly_chart(fig_centroid_heatmap(ARCHETYPE_CENTROIDS_MOT, normalize=False), use_container_width=True)
-
-    st.subheader("📥 Download Full Scores (CSV)")
-    out_df = pd.DataFrame([{ "participant_id": participant_id, **res.probs }])
-    buf = StringIO(); out_df.to_csv(buf, index=False)
-    st.download_button("Download archetype_probs.csv", data=buf.getvalue(), file_name=f"{participant_id}_probs.csv", mime="text/csv")
+        if HAS_PLOTLY:
+            st.plotly_chart(fig_blend_triangle(score.top3), use_container_width=True)
+            st.plotly_chart(fig_strategy_compass(str_means, sub), use_container_width=True)
+            st.plotly_chart(fig_confidence_curves(si_mean, ssb_mean, C), use_container_width=True)
+            tabs = st.tabs(["12-Bar Spectrum", "Motivational Wheel", "Centroid Heatmap"])
+            with tabs[0]:
+                st.plotly_chart(fig_motivation_spectrum(mot_series.rename("score"), mot_label), use_container_width=True)
+            with tabs[1]:
+                st.plotly_chart(fig_motivation_wheel(mot_series.rename("score"), mot_label), use_container_width=True)
+            with tabs[2]:
+                st.plotly_chart(fig_centroid_heatmap(ARCHETYPE_CENTROIDS_MOT, normalize=False), use_container_width=True)
+        else:
+            st.info("Plotly not installed. Add `plotly` to requirements.txt to enable charts.")
 
 with right:
     st.subheader("📊 Archetype Probabilities")
     st.dataframe(probs.to_frame())
 
     st.subheader(f"🧩 Motivation Ranking — {'Z' if score_col_name=='z' else 'Raw'}")
-    st.dataframe(mot_df[["rank", score_col_name]].rename(columns={score_col_name: ("Z" if score_col_name=="z" else "Mean")}))
+    st.dataframe(mot_df[["rank", score_col_name]].rename(columns={score_col_name: ("Z" if score_col_name=='z' else "Mean")}))
 
-    # Diagnostics table (Euclidean)
     with st.expander("🛠 Diagnostics: Distances & Similarity (motivations only)"):
-        st.dataframe(dist_df, use_container_width=True)
+        st.dataframe(dist_df := dist_df, use_container_width=True)
         d_buf = StringIO(); dist_df.to_csv(d_buf, index=False)
         st.download_button("Download distances.csv", d_buf.getvalue(), "distances.csv", "text/csv")
 
@@ -794,7 +691,7 @@ if HAS_REPORTLAB:
 
     pdf_bytes = build_pdf_report(
         participant_id=participant_id,
-        top3=res.top3,
+        top3=score.top3,
         mix=mix,
         probs_series=probs,
         mot_df=mot_df[[score_col_name]].rename(columns={score_col_name: score_col_name}).sort_values(by=score_col_name, ascending=False),
@@ -805,5 +702,3 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
-
-
