@@ -702,3 +702,21 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
+import streamlit as st
+from modules.web_integration import generate_user_report
+
+if "user_test_results" in locals() or "user_test_results" in globals():
+    st.markdown("---")
+    st.subheader("📘 Generate Your Full Personality Report")
+
+    if st.button("Generate My Full Analytical Report"):
+        with st.spinner("Building your detailed report..."):
+            pdf_path, txt_path = generate_user_report(user_test_results, mode="full")
+
+        with open(pdf_path, "rb") as f:
+            st.download_button("Download Full Report (PDF)", f, file_name="Personality_Report.pdf")
+        with open(txt_path, "r") as f:
+            st.download_button("Download Text Version (.txt)", f, file_name="Personality_Report.txt")
+
+
