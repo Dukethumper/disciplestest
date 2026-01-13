@@ -218,16 +218,6 @@ def derive_orientations(ps: Dict[str,float]) -> None:
     if np.isnan(ps.get("Surrender", np.nan)):
         ps["Surrender"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Integrative"]]))
 
-  # confidence
-    si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
-    ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
-    si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
-    ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
-    if np.isnan(si_mean) or np.isnan(ssb_mean):
-        st.error("Missing Self Insight or Self Serving Bias items.")
-        st.stop()
-    C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
-
 # ------------------ Strategy subtype (top-2) ------------------
 BALANCE_DELTA = 0.08
 def quadrant_label_from_pair(a: str, b: str) -> str:
@@ -522,6 +512,16 @@ for it in shuffled:
     st.divider()
     responses[it["id"]] = val
 
+# ------------------ Confidence Utility ------------------
+def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str]:
+    """Compute overall confidence index (C) and qualitative level."""
+    si_n  = (float(si)  - 1.0) / 6.0       # normalize Self Insight (1→0, 7→1)
+    ssb_n = (7.0 - float(ssb)) / 6.0       # reverse Self-Serving Bias (1→1, 7→0)
+    C = max(0.0, min(1.0, 0.5 * (si_n + ssb_n)))
+    level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
+    return C, level
+
+
 # ============================================================
 # 🧮 Compute and store results once
 # ============================================================
@@ -775,6 +775,7 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
 
