@@ -572,25 +572,38 @@ if "user_test_results" in st.session_state:
     st.markdown("---")
     st.subheader("📘 Generate Your Full Personality Report")
 
+    # keep state of whether report has been generated
+    if "report_generated" not in st.session_state:
+        st.session_state.report_generated = False
+
+    # generate report only once
     if st.button("Generate My Full Analytical Report"):
         with st.spinner("Building your detailed report..."):
             pdf_path, txt_path = generate_user_report(user_data, mode="full")
+        st.session_state["pdf_path"] = pdf_path
+        st.session_state["txt_path"] = txt_path
+        st.session_state.report_generated = True
+        st.success("✅ Report generated successfully! You can download it below.")
 
-        with open(pdf_path, "rb") as f:
-            st.download_button(
-                "⬇️ Download Full Report (PDF)",
-                f,
-                file_name="Personality_Report.pdf",
-                mime="application/pdf",
-            )
+    # show download buttons if a report exists
+    if st.session_state.report_generated:
+        if "pdf_path" in st.session_state and os.path.exists(st.session_state["pdf_path"]):
+            with open(st.session_state["pdf_path"], "rb") as f:
+                st.download_button(
+                    "⬇️ Download Full Report (PDF)",
+                    f,
+                    file_name="Personality_Report.pdf",
+                    mime="application/pdf",
+                )
 
-        with open(txt_path, "r") as f:
-            st.download_button(
-                "⬇️ Download Text Version (.txt)",
-                f,
-                file_name="Personality_Report.txt",
-                mime="text/plain",
-            )
+        if "txt_path" in st.session_state and os.path.exists(st.session_state["txt_path"]):
+            with open(st.session_state["txt_path"], "r") as f:
+                st.download_button(
+                    "⬇️ Download Text Version (.txt)",
+                    f,
+                    file_name="Personality_Report.txt",
+                    mime="text/plain",
+                )
 
 # ------------ Save to master CSV ------------
 init_csv()
@@ -742,5 +755,6 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
