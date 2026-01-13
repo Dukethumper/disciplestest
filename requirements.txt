@@ -1,5 +1,21 @@
-streamlit>=1.32
-pandas>=2.0
-numpy>=1.24
-plotly>=5.18
-reportlab>=4.0
+# Core computation
+pandas
+numpy
+scikit-learn
+
+# Visualization
+matplotlib
+plotly
+
+# PDF and text generation
+fpdf2
+PyPDF2
+python-docx
+
+# Web + templating
+streamlit
+jinja2
+
+# Utility
+tqdm
+Pillow
