@@ -397,6 +397,45 @@ def save_result_to_csv(
     df = pd.DataFrame([row])
     df.to_csv(RESULTS_CSV_PATH, mode="a", header=not exists, index=False, encoding="utf-8")
 
+def build_report_dataframe(state: dict, archetype_order: list[str]) -> pd.DataFrame:
+    """Flatten session results into a single-row DataFrame for report pipeline."""
+    score = state["score"]
+    sub   = state["sub"]
+    (p1,p1v),(p2,p2v),(p3,p3v) = score.top3
+
+    # Strategy pair + percentages
+    s1, s2 = sub["top_pair"]
+    pct1 = float(sub["percentages"][s1])
+    pct2 = float(sub["percentages"][s2])
+
+    # Base row (match master CSV columns so downstream code can reuse)
+    row = {
+        "participant_id": state["participant_id"],
+        "primary_archetype": p1, "primary_prob": float(p1v),
+        "secondary_archetype": p2, "secondary_prob": float(p2v),
+        "tertiary_archetype": p3, "tertiary_prob": float(p3v),
+        "confidence": float(state["C"]),
+        "si_mean": float(state["si_mean"]),
+        "ssb_mean": float(state["ssb_mean"]),
+        "strategy_pair": f"{s1}+{s2}",
+        "strategy_pct1": pct1, "strategy_pct2": pct2,
+        "strategy_leaning": sub["leaning"], "strategy_quadrant": sub["quadrant"],
+    }
+
+    # 12 motivations (means)
+    ps = state["person_scales"]
+    for m in [
+        "Sattva","Rajas","Tamas","Prajna","Personal_Unconscious","Collective_Unconscious",
+        "Cheng","Wu_Wei","Anatta","Relational_Balance","Thymos","Eros"
+    ]:
+        row[m] = float(ps.get(m, np.nan))
+
+    # Add all archetype probabilities as Prob_<name>
+    for name in archetype_order:
+        row[f"Prob_{name}"] = float(score.probs.get(name, np.nan))
+
+    return pd.DataFrame([row])
+
 # ------------------ UI ------------------
 st.set_page_config(page_title="Motivational Archetypes – Test", page_icon="🧭", layout="wide")
 st.title("🧭 Motivational Archetypes – Test")
@@ -651,8 +690,14 @@ st.subheader("📘 Generate Your Full Personality Report")
 if pdf_generate_available:
     if st.button("Generate My Full Analytical Report"):
         with st.spinner("Building your detailed report..."):
-            # You likely expect a dict named user_test_results in that module
-            pdf_path, txt_path = generate_user_report(st.session_state["user_test_results"], mode="full")
+            # Build a one-row DataFrame for the report module
+            df_report = build_report_dataframe(
+                st.session_state["user_test_results"],
+                archetype_order=list(ARCHETYPE_CENTROIDS_MOT.index)
+            )
+            # Hand a DataFrame to your pipeline (preprocess_data expects DataFrame)
+            pdf_path, txt_path = generate_user_report(df_report, mode="full")
+
         st.session_state["pdf_path"] = pdf_path
         st.session_state["txt_path"] = txt_path
         st.session_state["report_generated"] = True
@@ -809,3 +854,4 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
