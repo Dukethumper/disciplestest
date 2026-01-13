@@ -690,13 +690,14 @@ st.subheader("📘 Generate Your Full Personality Report")
 if pdf_generate_available:
     if st.button("Generate My Full Analytical Report"):
         with st.spinner("Building your detailed report..."):
-            # Build a one-row DataFrame for the report module
+            # Build one-row DataFrame as before
             df_report = build_report_dataframe(
                 st.session_state["user_test_results"],
                 archetype_order=list(ARCHETYPE_CENTROIDS_MOT.index)
             )
-            # Hand a DataFrame to your pipeline (preprocess_data expects DataFrame)
-            pdf_path, txt_path = generate_user_report(df_report, mode="full")
+            # ✅ Convert to JSON-like dict for your report pipeline
+            payload = df_report.to_dict(orient="records")[0]
+            pdf_path, txt_path = generate_user_report(payload, mode="full")
 
         st.session_state["pdf_path"] = pdf_path
         st.session_state["txt_path"] = txt_path
@@ -854,4 +855,5 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
