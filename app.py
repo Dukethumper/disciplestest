@@ -512,84 +512,79 @@ for it in shuffled:
     st.divider()
     responses[it["id"]] = val
 
-if not st.button("Compute Results"):
-    st.stop()
-
-# aggregate
-person_scales = aggregate_to_scales(responses, spec)
-derive_orientations(person_scales)
-
-missing_dims = [d for d in (MOTIVATIONS+STRATEGIES+ORIENTATIONS) if np.isnan(person_scales.get(d, np.nan))]
-if missing_dims:
-    st.error(f"Missing responses for: {missing_dims}")
-    st.stop()
-
-# confidence (Self Insight normal; Self-Serving Bias reversed)
-def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str]:
-    si_n  = (float(si)  - 1.0) / 6.0       # 1→0, 7→1
-    ssb_n = (7.0 - float(ssb)) / 6.0       # 1→1, 7→0 (reversed)
-    C = max(0.0, min(1.0, 0.5 * (si_n + ssb_n)))
-    level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
-    return C, level
-
-si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
-ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
-si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
-ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
-if np.isnan(si_mean) or np.isnan(ssb_mean):
-    st.error("Missing Self Insight or Self Serving Bias items.")
-    st.stop()
-C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
-
-# strategy subtype (only for display)
-str_means = {d: direct_mean_for_dim(responses, spec, d) for d in STRATEGIES}
-sub = strategy_subtype_from_means(str_means)
-
-# optional norms for z
-norms_df = None
-if norms_up is not None:
-    norms_df = pd.read_csv(norms_up)
-    ren = {"Inward":"Cognitive","Outward":"Energy","Relationship":"Relational"}
-    have = [c for c in ren if c in norms_df.columns]
-    if have: norms_df = norms_df.rename(columns={c: ren[c] for c in have})
-
-# scoring (motivations only)
-z = zparams_from_norms_or_single(person_scales, norms_df)
-person_row = pd.Series({**person_scales, "participant_id": participant_id})
-score, dist_df = score_single_mot_only(person_row, z, ARCHETYPE_CENTROIDS_MOT)
-
-# results
-probs = pd.Series(score.probs).sort_values(ascending=False).rename("probability")
-(p1,p1v),(p2,p2v),(p3,p3v) = score.top3
-
-def top3_percentages(top3: List[Tuple[str,float]]) -> List[Tuple[str,int]]:
-    vals = [p for _, p in top3]; s = sum(vals) or 1.0
-    raw = [p / s * 100.0 for p in vals]
-    a = int(round(raw[0])); b = int(round(raw[1])); c = 100 - a - b
-    return [(top3[0][0], a), (top3[1][0], b), (top3[2][0], c)]
-mix = top3_percentages(score.top3)
-mix_text = " · ".join([f"{pct}% {name}" for name, pct in mix])
-
-# motivation ranking display series
-if ranking_mode.startswith("Z-scores"):
-    mot_series = pd.Series({m: (person_scales[m]-z.mean[m])/z.std[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("z")
-    mot_df = mot_series.to_frame(); score_col_name = "z"; mot_label = "Z-scores"
-else:
-    mot_series = pd.Series({m: person_scales[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("mean")
-    mot_df = mot_series.to_frame(); score_col_name = "mean"; mot_label = "Raw means (1–7)"
-mot_df["rank"] = np.arange(1, len(mot_df)+1)
-
 # ============================================================
-# 🧠 Persist Results Across Reruns
+# 🧮 Compute and store results once
 # ============================================================
+if st.button("Compute Results"):
+    # --- aggregation and scoring ---
+    person_scales = aggregate_to_scales(responses, spec)
+    derive_orientations(person_scales)
 
-if "user_test_results" not in st.session_state:
-    st.session_state["user_test_results"] = person_scales
+    missing_dims = [d for d in (MOTIVATIONS+STRATEGIES+ORIENTATIONS)
+                    if np.isnan(person_scales.get(d, np.nan))]
+    if missing_dims:
+        st.error(f"Missing responses for: {missing_dims}")
+        st.stop()
+
+    # confidence
+    si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
+    ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
+    si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
+    ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
+    if np.isnan(si_mean) or np.isnan(ssb_mean):
+        st.error("Missing Self Insight or Self Serving Bias items.")
+        st.stop()
+    C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
+
+    # strategy subtype
+    str_means = {d: direct_mean_for_dim(responses, spec, d) for d in STRATEGIES}
+    sub = strategy_subtype_from_means(str_means)
+
+    # optional norms
+    norms_df = None
+    if norms_up is not None:
+        norms_df = pd.read_csv(norms_up)
+        ren = {"Inward":"Cognitive","Outward":"Energy","Relationship":"Relational"}
+        have = [c for c in ren if c in norms_df.columns]
+        if have:
+            norms_df = norms_df.rename(columns={c: ren[c] for c in have})
+
+    # scoring
+    z = zparams_from_norms_or_single(person_scales, norms_df)
+    person_row = pd.Series({**person_scales, "participant_id": participant_id})
+    score, dist_df = score_single_mot_only(person_row, z, ARCHETYPE_CENTROIDS_MOT)
+
+    # save to CSV immediately
+    init_csv()
+    save_result_to_csv(
+        participant_id=participant_id,
+        top3=score.top3,
+        C=C, si_mean=si_mean, ssb_mean=ssb_mean,
+        subtype=sub,
+        mot_means={m: person_scales[m] for m in MOTIVATIONS},
+        archetype_probs=score.probs,
+        archetype_order=list(ARCHETYPE_CENTROIDS_MOT.index)
+    )
+
+    # store everything in session_state
+    st.session_state["user_test_results"] = {
+        "person_scales": person_scales,
+        "score": score,
+        "dist_df": dist_df,
+        "C": C,
+        "C_level": C_level,
+        "si_mean": si_mean,
+        "ssb_mean": ssb_mean,
+        "sub": sub,
+    }
     st.session_state["report_generated"] = False
+    st.success("✅ Results computed and saved! Scroll down to generate your full report.")
+    st.experimental_rerun()   # refresh to move to the next section
 
-user_test_results = st.session_state["user_test_results"]
+# stop here until results exist
+if "user_test_results" not in st.session_state:
+    st.stop()
 
-st.success("✅ Test complete! Scroll down to generate your full personality report.")
 
 # ============================================================
 # 📘 Full Personality Report Generation
@@ -780,6 +775,7 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
 
