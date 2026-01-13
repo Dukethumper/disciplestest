@@ -552,6 +552,41 @@ else:
     mot_df = mot_series.to_frame(); score_col_name = "mean"; mot_label = "Raw means (1–7)"
 mot_df["rank"] = np.arange(1, len(mot_df)+1)
 
+st.session_state["user_test_results"] = user_test_results
+
+# ============================================================
+# 📘 Full Personality Report Generation
+# ============================================================
+import streamlit as st
+from modules.web_integration import generate_user_report
+
+if "user_test_results" in st.session_state:
+    user_data = st.session_state["user_test_results"]
+
+    st.markdown("---")
+    st.subheader("📘 Generate Your Full Personality Report")
+
+    if st.button("Generate My Full Analytical Report"):
+        with st.spinner("Building your detailed report..."):
+            pdf_path, txt_path = generate_user_report(user_data, mode="full")
+
+        with open(pdf_path, "rb") as f:
+            st.download_button(
+                "⬇️ Download Full Report (PDF)",
+                f,
+                file_name="Personality_Report.pdf",
+                mime="application/pdf",
+            )
+
+        with open(txt_path, "r") as f:
+            st.download_button(
+                "⬇️ Download Text Version (.txt)",
+                f,
+                file_name="Personality_Report.txt",
+                mime="text/plain",
+            )
+
+
 # ------------ Save to master CSV ------------
 init_csv()
 save_result_to_csv(
@@ -702,38 +737,4 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
-
-# ============================================================
-# 📘 Full Personality Report Generation
-# ============================================================
-import streamlit as st
-from modules.web_integration import generate_user_report
-
-# This assumes you already created `user_test_results`
-# earlier in the script (a dict of the user’s final scores)
-if "user_test_results" in locals() or "user_test_results" in globals():
-    st.markdown("---")
-    st.subheader("📘 Generate Your Full Personality Report")
-
-    if st.button("Generate My Full Analytical Report"):
-        with st.spinner("Building your detailed report..."):
-            pdf_path, txt_path = generate_user_report(user_test_results, mode="full")
-
-        with open(pdf_path, "rb") as f:
-            st.download_button(
-                "⬇️ Download Full Report (PDF)",
-                f,
-                file_name="Personality_Report.pdf",
-                mime="application/pdf",
-            )
-
-        with open(txt_path, "r") as f:
-            st.download_button(
-                "⬇️ Download Text Version (.txt)",
-                f,
-                file_name="Personality_Report.txt",
-                mime="text/plain",
-            )
-
-
 
