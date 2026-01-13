@@ -48,7 +48,7 @@ DEFAULT_DOMAIN_MAP = {
     "Relational": ["Relational_Balance","Thymos","Eros"],
 }
 
-# --- Header canonicalization (accept flexible headers in questions/norms/centroids) ---
+# --- Header canonicalization ---
 HEADER_TO_CANON = {
     "sattva":"Sattva","rajas":"Rajas","tamas":"Tamas",
     "prajna":"Prajna",
@@ -96,8 +96,7 @@ def zparams_from_norms_or_single(person_scales: Dict[str,float], norms_df: Optio
             df[col] = np.nan
     return ZParams.fit(df, list(ALL_REQ_FOR_Z))
 
-# ------------------ Embedded centroids (latest you provided) ------------------
-# NOTE: Strategies/Orientations present but NOT used in grading. We slice to MOTIVATIONS.
+# ------------------ Embedded centroids ------------------
 EMBEDDED_CENTROIDS_CSV = """Archetype,Sattva,Rajas,Tamas,Prajna,Personal_Unconscious,Collective_Unconscious,Cheng,Wu_Wei,Anatta,Relational_Balance,Thymos,Eros,Conform,Control,Flow,Risk,Cognitive,Energy,Relational,Surrender
 Lucerna (Lantern),4.8,6.8,3.8,6.0,4.7,4.5,5.0,4.9,4.3,4.7,6.2,5.0,4.5,4.8,6.0,4.2,4.6,6.8,5.2,4.6
 Arbor (Tree),6.4,4.5,4.7,4.4,4.5,4.8,6.0,4.8,4.3,6.7,5.0,5.3,6.0,4.8,4.2,3.8,4.9,4.9,6.5,5.1
@@ -123,7 +122,6 @@ def load_centroids_from_csv(path: str) -> pd.DataFrame:
     if "Archetype" not in df.columns:
         raise ValueError("Centroid CSV must include an 'Archetype' column.")
     df = df.set_index("Archetype")
-    # normalize common header variants
     rename_map = {
         "Pers.U":"Personal_Unconscious", "Personal Unconscious":"Personal_Unconscious",
         "Coll.U":"Collective_Unconscious", "Collective Unconscious":"Collective_Unconscious",
@@ -249,7 +247,6 @@ class DistRow:
     similarity: float
 
 def score_single_mot_only(person: pd.Series, z: "ZParams", arch_mot: pd.DataFrame) -> Tuple[ScorePieces, pd.DataFrame]:
-    # z-standardize person & centroids in motivation space
     z_person_m = np.array([(person[m] - z.mean[m]) / z.std[m] for m in MOTIVATIONS], dtype=float)
     arch_std = arch_mot.copy()
     for m in MOTIVATIONS:
@@ -381,7 +378,6 @@ def save_result_to_csv(
         "strategy_pair": f"{s1}+{s2}",
         "strategy_pct1": pct1, "strategy_pct2": pct2,
         "strategy_leaning": subtype["leaning"], "strategy_quadrant": subtype["quadrant"],
-        # 12 motivations (means)
         "Sattva": float(mot_means.get("Sattva", np.nan)),
         "Rajas": float(mot_means.get("Rajas", np.nan)),
         "Tamas": float(mot_means.get("Tamas", np.nan)),
@@ -395,7 +391,6 @@ def save_result_to_csv(
         "Thymos": float(mot_means.get("Thymos", np.nan)),
         "Eros": float(mot_means.get("Eros", np.nan)),
     }
-    # add all archetype probabilities
     for name in archetype_order:
         row[f"Prob_{name}"] = float(archetype_probs.get(name, np.nan))
     exists = os.path.exists(RESULTS_CSV_PATH)
@@ -419,7 +414,46 @@ with st.sidebar:
 def load_questions_from_repo() -> Dict:
     q_path = os.getenv("QUESTIONS_PATH", "questions.txt")
     if not os.path.exists(q_path):
-        raise FileNotFoundError(f"questions file not found at: {os.path.abspath(q_path)}")
+        # Fallback embedded minimal spec if missing
+        st.warning("No `questions.txt` found. Using a tiny embedded fallback.")
+        return parse_txt_questions("""
+Sattva:
+I make choices with clarity. [L=Never|R=Always]
+Rajas:
+I pursue goals intensely. [L=Never|R=Always]
+Tamas:
+I feel pulled toward inaction. [L=Never|R=Always]
+Prajna:
+I reflect to find principles. [L=Never|R=Always]
+Personal Unconscious:
+Personal memories shape decisions. [L=Never|R=Always]
+Collective Unconscious:
+Shared symbols guide me. [L=Never|R=Always]
+Cheng:
+I value upright conduct. [L=Never|R=Always]
+Wu Wei:
+I let things unfold naturally. [L=Never|R=Always]
+Anatta:
+I step back from ego. [L=Never|R=Always]
+Relational Balance:
+I keep relationships steady. [L=Never|R=Always]
+Thymos:
+I care about esteem. [L=Never|R=Always]
+Eros:
+I'm energized by connection. [L=Never|R=Always]
+Conform:
+I align with expectations. [L=Never|R=Always]
+Control:
+I keep things on track. [L=Never|R=Always]
+Flow:
+I adapt fluidly. [L=Never|R=Always]
+Risk:
+I'm comfortable taking chances. [L=Never|R=Always]
+Self Insight:
+I understand my patterns. [L=Strongly Disagree|R=Strongly Agree]
+Self Serving Bias:
+I credit success to me, failures to others. [L=Strongly Disagree|R=Strongly Agree]
+        """.strip())
     text = open(q_path, "r", encoding="utf-8").read().lstrip("\ufeff")
     return parse_txt_questions(text)
 
@@ -466,81 +500,65 @@ responses: Dict[str, int] = {}
 scale_defaults = spec.get("scale", {"min": 1, "max": 7, "step": 1})
 
 st.subheader("📝 Questionnaire")
-
 for it in shuffled:
     vmin = int(it.get("min", scale_defaults.get("min", 1)))
     vmax = int(it.get("max", scale_defaults.get("max", 7)))
     step = int(it.get("step", scale_defaults.get("step", 1)))
     default_val = vmin + ((vmax - vmin) // (2 * step)) * step
-
     c1, c2 = st.columns([2, 3])
-
-    # Left column: Question text
-    with c1:
-        st.markdown(f"**{it['text']}**")
-
-    # Right column: Slider + labels
+    with c1: st.markdown(f"**{it['text']}**")
     with c2:
         cur = st.session_state.get(it["id"], default_val)
         curr_label = value_to_label(it, cur)
-
-        # Show current label or side anchors
         if curr_label:
-            st.markdown(
-                f"<div style='font-size:0.9rem;opacity:.8;margin-bottom:-0.5rem'><b>{curr_label}</b></div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div style='font-size:0.9rem;opacity:.8;margin-bottom:-0.5rem'><b>{curr_label}</b></div>", unsafe_allow_html=True)
         elif it.get("L") or it.get("R"):
-            st.markdown(
-                f"<div style='font-size:0.9rem;opacity:.7;margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>",
-                unsafe_allow_html=True,
-            )
-
-        # ✅ Fixed slider with visible label compliance
+            st.markdown(f"<div style='font-size:0.9rem;opacity:.7;margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>", unsafe_allow_html=True)
         val = st.slider(
-            label="Select your response",               # non-empty label required
-            min_value=vmin,
-            max_value=vmax,
-            step=step,
-            value=cur,
-            key=it["id"],
-            label_visibility="collapsed",               # hides label visually
+            label="Select your response",
+            min_value=vmin, max_value=vmax, step=step,
+            value=cur, key=it["id"], label_visibility="collapsed",
             help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')} ↔ {it.get('R','')}",
         )
-
-    # Divider between questions
     st.divider()
     responses[it["id"]] = val
 
 # ------------------ Confidence Utility ------------------
 def compute_confidence_from_means(si: float, ssb: float) -> tuple[float, str]:
-    """Compute overall confidence index (C) and qualitative level."""
-    si_n  = (float(si)  - 1.0) / 6.0       # normalize Self Insight (1→0, 7→1)
-    ssb_n = (7.0 - float(ssb)) / 6.0       # reverse Self-Serving Bias (1→1, 7→0)
+    si_n  = (float(si)  - 1.0) / 6.0       # Self Insight: 1→0, 7→1
+    ssb_n = (7.0 - float(ssb)) / 6.0       # Self-Serving Bias: 1→1, 7→0 (reversed)
     C = max(0.0, min(1.0, 0.5 * (si_n + ssb_n)))
     level = "High" if C >= 2/3 else ("Moderate" if C >= 0.45 else "Low")
     return C, level
-
 
 # ============================================================
 # 🧮 Compute and store results once
 # ============================================================
 if st.button("Compute Results"):
-    # --- aggregation and scoring ---
+    # Aggregate means and derive orientations
     person_scales = aggregate_to_scales(responses, spec)
     derive_orientations(person_scales)
 
-    missing_dims = [d for d in (MOTIVATIONS+STRATEGIES+ORIENTATIONS)
-                    if np.isnan(person_scales.get(d, np.nan))]
+    missing_dims = [d for d in (MOTIVATIONS+STRATEGIES+ORIENTATIONS) if np.isnan(person_scales.get(d, np.nan))]
     if missing_dims:
         st.error(f"Missing responses for: {missing_dims}")
         st.stop()
 
-    # strategy subtype
+    # Confidence (compute BEFORE use)
+    si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
+    ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
+    si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
+    ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
+    if np.isnan(si_mean) or np.isnan(ssb_mean):
+        st.error("Missing Self Insight or Self Serving Bias items.")
+        st.stop()
+    C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
+
+    # Strategy subtype (display only)
     str_means = {d: direct_mean_for_dim(responses, spec, d) for d in STRATEGIES}
     sub = strategy_subtype_from_means(str_means)
 
-    # optional norms
+    # Norms (optional) for Z
     norms_df = None
     if norms_up is not None:
         norms_df = pd.read_csv(norms_up)
@@ -549,12 +567,31 @@ if st.button("Compute Results"):
         if have:
             norms_df = norms_df.rename(columns={c: ren[c] for c in have})
 
-    # scoring
+    # Scoring (motivations only)
     z = zparams_from_norms_or_single(person_scales, norms_df)
     person_row = pd.Series({**person_scales, "participant_id": participant_id})
     score, dist_df = score_single_mot_only(person_row, z, ARCHETYPE_CENTROIDS_MOT)
 
-    # save to CSV immediately
+    # Motivation ranking series/table
+    if ranking_mode.startswith("Z-scores"):
+        mot_series = pd.Series({m: (person_scales[m]-z.mean[m])/z.std[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("z")
+        score_col_name = "z"; mot_label = "Z-scores"
+    else:
+        mot_series = pd.Series({m: person_scales[m] for m in MOTIVATIONS}).sort_values(ascending=False).rename("mean")
+        score_col_name = "mean"; mot_label = "Raw means (1–7)"
+    mot_df = mot_series.to_frame()
+    mot_df["rank"] = np.arange(1, len(mot_df)+1)
+
+    # Top-3 mix
+    def top3_percentages(top3: List[Tuple[str,float]]) -> List[Tuple[str,int]]:
+        vals = [p for _, p in top3]; s = sum(vals) or 1.0
+        raw = [p / s * 100.0 for p in vals]
+        a = int(round(raw[0])); b = int(round(raw[1])); c = 100 - a - b
+        return [(top3[0][0], a), (top3[1][0], b), (top3[2][0], c)]
+    mix = top3_percentages(score.top3)
+    mix_text = " · ".join([f"{pct}% {name}" for name, pct in mix])
+
+    # Persist to CSV
     init_csv()
     save_result_to_csv(
         participant_id=participant_id,
@@ -566,64 +603,71 @@ if st.button("Compute Results"):
         archetype_order=list(ARCHETYPE_CENTROIDS_MOT.index)
     )
 
-    # store everything in session_state
+    # Store everything for rendering
     st.session_state["user_test_results"] = {
+        "participant_id": participant_id,
         "person_scales": person_scales,
+        "z": {"mean": z.mean, "std": z.std},
         "score": score,
         "dist_df": dist_df,
-        "C": C,
-        "C_level": C_level,
-        "si_mean": si_mean,
-        "ssb_mean": ssb_mean,
-        "sub": sub,
+        "C": C, "C_level": C_level,
+        "si_mean": si_mean, "ssb_mean": ssb_mean,
+        "str_means": str_means, "sub": sub,
+        "ranking_mode": ranking_mode,
+        "mot_series": mot_series, "mot_df": mot_df,
+        "mix": mix, "mix_text": mix_text,
+        "mot_label": mot_label, "score_col_name": score_col_name,
     }
-    st.session_state["report_generated"] = False
-    st.success("✅ Results computed and saved! Scroll down to generate your full report.")
-    st.experimental_rerun()   # refresh to move to the next section
 
-# stop here until results exist
+# Stop until we have results
 if "user_test_results" not in st.session_state:
     st.stop()
 
+# ------------ Rehydrate everything from session_state ------------
+state = st.session_state["user_test_results"]
+participant_id = state["participant_id"]
+score = state["score"]
+dist_df = state["dist_df"]
+C = state["C"]; C_level = state["C_level"]
+si_mean = state["si_mean"]; ssb_mean = state["ssb_mean"]
+str_means = state["str_means"]; sub = state["sub"]
+mot_series = state["mot_series"]; mot_df = state["mot_df"]
+mix = state["mix"]; mix_text = state["mix_text"]
+mot_label = state["mot_label"]; score_col_name = state["score_col_name"]
+probs = pd.Series(score.probs).sort_values(ascending=False).rename("probability")
+(p1,p1v),(p2,p2v),(p3,p3v) = score.top3
 
-# ============================================================
-# 📘 Full Personality Report Generation
-# ============================================================
-from modules.web_integration import generate_user_report
-import os
+# ------------------ (Optional) external report module ------------------
+# Guard missing module; if present, enable PDF/txt generation via your custom function.
+pdf_generate_available = False
+try:
+    from modules.web_integration import generate_user_report
+    pdf_generate_available = True
+except Exception:
+    pdf_generate_available = False
 
 st.markdown("---")
 st.subheader("📘 Generate Your Full Personality Report")
+if pdf_generate_available:
+    if st.button("Generate My Full Analytical Report"):
+        with st.spinner("Building your detailed report..."):
+            # You likely expect a dict named user_test_results in that module
+            pdf_path, txt_path = generate_user_report(st.session_state["user_test_results"], mode="full")
+        st.session_state["pdf_path"] = pdf_path
+        st.session_state["txt_path"] = txt_path
+        st.session_state["report_generated"] = True
+        st.success("✅ Report generated! Download below.")
+        st.write(f"📁 Files saved in: `{os.path.abspath(pdf_path)}`")
 
-if st.button("Generate My Full Analytical Report"):
-    with st.spinner("Building your detailed report..."):
-        pdf_path, txt_path = generate_user_report(user_test_results, mode="full")
-    st.session_state["pdf_path"] = pdf_path
-    st.session_state["txt_path"] = txt_path
-    st.session_state["report_generated"] = True
-    st.success("✅ Report generated successfully! You can download it below.")
-    st.write(f"📁 Files saved in: `{os.path.abspath(pdf_path)}`")
-
-if st.session_state.get("report_generated"):
-    if "pdf_path" in st.session_state and os.path.exists(st.session_state["pdf_path"]):
-        with open(st.session_state["pdf_path"], "rb") as f:
-            st.download_button(
-                "⬇️ Download Full Report (PDF)",
-                f,
-                file_name="Personality_Report.pdf",
-                mime="application/pdf",
-                key="pdf_download",
-            )
-
-    if "txt_path" in st.session_state and os.path.exists(st.session_state["txt_path"]):
-        with open(st.session_state["txt_path"], "r") as f:
-            st.download_button(
-                "⬇️ Download Text Version (.txt)",
-                f,
-                file_name="Personality_Report.txt",
-                mime="text/plain",
-                key="txt_download",
-            )
+    if st.session_state.get("report_generated"):
+        if "pdf_path" in st.session_state and os.path.exists(st.session_state["pdf_path"]):
+            with open(st.session_state["pdf_path"], "rb") as f:
+                st.download_button("⬇️ Download Full Report (PDF)", f, file_name="Personality_Report.pdf", mime="application/pdf")
+        if "txt_path" in st.session_state and os.path.exists(st.session_state["txt_path"]):
+            with open(st.session_state["txt_path"], "r") as f:
+                st.download_button("⬇️ Download Text Version (.txt)", f, file_name="Personality_Report.txt", mime="text/plain")
+else:
+    st.caption("External report module not found (modules/web_integration.py). Skipping extra report generation.")
 
 # ------------------ Layout ------------------
 left, right = st.columns([1,1])
@@ -645,7 +689,9 @@ with left:
     st.caption(f"Self Insight mean: {si_mean:.2f} · Self Serving Bias mean: {ssb_mean:.2f} · Level: {C_level}")
 
     st.subheader("🧩 Motivation Ranking (Top 12)")
-    inline_df = mot_df[[score_col_name]].copy().reset_index().rename(columns={"index":"Motivation", score_col_name: ("Z" if score_col_name=="z" else "Mean")})
+    inline_df = mot_df[[score_col_name]].copy().reset_index().rename(
+        columns={"index":"Motivation", score_col_name: ("Z" if score_col_name=="z" else "Mean")}
+    )
     inline_df.insert(0, "Rank", np.arange(1, len(inline_df)+1))
     st.table(inline_df)
 
@@ -672,7 +718,7 @@ with right:
     st.dataframe(mot_df[["rank", score_col_name]].rename(columns={score_col_name: ("Z" if score_col_name=='z' else "Mean")}))
 
     with st.expander("🛠 Diagnostics: Distances & Similarity (motivations only)"):
-        st.dataframe(dist_df := dist_df, use_container_width=True)
+        st.dataframe(dist_df, use_container_width=True)
         d_buf = StringIO(); dist_df.to_csv(d_buf, index=False)
         st.download_button("Download distances.csv", d_buf.getvalue(), "distances.csv", "text/csv")
 
@@ -763,13 +809,3 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
-
-
-
-
-
-
-
-
-
-
