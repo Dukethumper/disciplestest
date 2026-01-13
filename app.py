@@ -625,18 +625,6 @@ if st.session_state.get("report_generated"):
                 key="txt_download",
             )
 
-# ------------ Save to master CSV ------------
-init_csv()
-save_result_to_csv(
-    participant_id=participant_id,
-    top3=score.top3,
-    C=C, si_mean=si_mean, ssb_mean=ssb_mean,
-    subtype=sub,
-    mot_means={m: person_scales[m] for m in MOTIVATIONS},
-    archetype_probs=score.probs,
-    archetype_order=list(ARCHETYPE_CENTROIDS_MOT.index)
-)
-
 # ------------------ Layout ------------------
 left, right = st.columns([1,1])
 
@@ -775,6 +763,7 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
 
