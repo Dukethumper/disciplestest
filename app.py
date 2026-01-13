@@ -552,12 +552,18 @@ else:
     mot_df = mot_series.to_frame(); score_col_name = "mean"; mot_label = "Raw means (1–7)"
 mot_df["rank"] = np.arange(1, len(mot_df)+1)
 
+# ✅ Add this block right here:
+import streamlit as st
+
+# Create a results dictionary that you’ll pass to the report generator
+user_test_results = person_scales  # or replace with your full results dict if defined elsewhere
 st.session_state["user_test_results"] = user_test_results
+
+st.success("✅ Test complete! Scroll down to generate your full personality report.")
 
 # ============================================================
 # 📘 Full Personality Report Generation
 # ============================================================
-import streamlit as st
 from modules.web_integration import generate_user_report
 
 if "user_test_results" in st.session_state:
@@ -585,7 +591,6 @@ if "user_test_results" in st.session_state:
                 file_name="Personality_Report.txt",
                 mime="text/plain",
             )
-
 
 # ------------ Save to master CSV ------------
 init_csv()
@@ -737,4 +742,5 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
