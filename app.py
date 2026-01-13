@@ -479,9 +479,17 @@ for it in shuffled:
             st.markdown(f"<div style='font-size:0.9rem;opacity:.8;margin-bottom:-0.5rem'><b>{curr_label}</b></div>", unsafe_allow_html=True)
         elif it.get("L") or it.get("R"):
             st.markdown(f"<div style='font-size:0.9rem;opacity:.7;margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>", unsafe_allow_html=True)
-        val = st.slider(label="", min_value=vmin, max_value=vmax, step=step,
-                        value=cur, key=it["id"],
-                        help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')} ↔ {it.get('R','')}")
+        val = st.slider(
+    label="Select your response",  # required non-empty label
+    min_value=vmin,
+    max_value=vmax,
+    step=step,
+    value=cur,
+    key=it["id"],
+    label_visibility="collapsed",  # hides the label visually but satisfies Streamlit
+    help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')} ↔ {it.get('R','')}"
+)
+
     st.divider()
     responses[it["id"]] = val
 
@@ -552,12 +560,15 @@ else:
     mot_df = mot_series.to_frame(); score_col_name = "mean"; mot_label = "Raw means (1–7)"
 mot_df["rank"] = np.arange(1, len(mot_df)+1)
 
-# ✅ Add this block right here:
-import streamlit as st
+# ============================================================
+# 🧠 Persist Results Across Reruns
+# ============================================================
 
-# Create a results dictionary that you’ll pass to the report generator
-user_test_results = person_scales  # or replace with your full results dict if defined elsewhere
-st.session_state["user_test_results"] = user_test_results
+if "user_test_results" not in st.session_state:
+    st.session_state["user_test_results"] = person_scales
+    st.session_state["report_generated"] = False
+
+user_test_results = st.session_state["user_test_results"]
 
 st.success("✅ Test complete! Scroll down to generate your full personality report.")
 
@@ -567,42 +578,38 @@ st.success("✅ Test complete! Scroll down to generate your full personality rep
 from modules.web_integration import generate_user_report
 import os
 
-if "user_test_results" in st.session_state:
-    user_data = st.session_state["user_test_results"]
+st.markdown("---")
+st.subheader("📘 Generate Your Full Personality Report")
 
-    st.markdown("---")
-    st.subheader("📘 Generate Your Full Personality Report")
+if st.button("Generate My Full Analytical Report"):
+    with st.spinner("Building your detailed report..."):
+        pdf_path, txt_path = generate_user_report(user_test_results, mode="full")
+    st.session_state["pdf_path"] = pdf_path
+    st.session_state["txt_path"] = txt_path
+    st.session_state["report_generated"] = True
+    st.success("✅ Report generated successfully! You can download it below.")
+    st.write(f"📁 Files saved in: `{os.path.abspath(pdf_path)}`")
 
-    # 1. only build report once
-    if st.button("Generate My Full Analytical Report"):
-        with st.spinner("Building your detailed report..."):
-            pdf_path, txt_path = generate_user_report(user_data, mode="full")
-        st.session_state["pdf_path"] = pdf_path
-        st.session_state["txt_path"] = txt_path
-        st.session_state["report_generated"] = True
-        st.success("✅ Report generated successfully! You can download it below.")
+if st.session_state.get("report_generated"):
+    if "pdf_path" in st.session_state and os.path.exists(st.session_state["pdf_path"]):
+        with open(st.session_state["pdf_path"], "rb") as f:
+            st.download_button(
+                "⬇️ Download Full Report (PDF)",
+                f,
+                file_name="Personality_Report.pdf",
+                mime="application/pdf",
+                key="pdf_download",
+            )
 
-    # 2. keep showing download buttons after reruns
-    if st.session_state.get("report_generated"):
-        if os.path.exists(st.session_state["pdf_path"]):
-            with open(st.session_state["pdf_path"], "rb") as f:
-                st.download_button(
-                    "⬇️ Download Full Report (PDF)",
-                    f,
-                    file_name="Personality_Report.pdf",
-                    mime="application/pdf",
-                    key="pdf_download",
-                )
-
-        if os.path.exists(st.session_state["txt_path"]):
-            with open(st.session_state["txt_path"], "r") as f:
-                st.download_button(
-                    "⬇️ Download Text Version (.txt)",
-                    f,
-                    file_name="Personality_Report.txt",
-                    mime="text/plain",
-                    key="txt_download",
-                )
+    if "txt_path" in st.session_state and os.path.exists(st.session_state["txt_path"]):
+        with open(st.session_state["txt_path"], "r") as f:
+            st.download_button(
+                "⬇️ Download Text Version (.txt)",
+                f,
+                file_name="Personality_Report.txt",
+                mime="text/plain",
+                key="txt_download",
+            )
 
 # ------------ Save to master CSV ------------
 init_csv()
@@ -754,6 +761,7 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
 
