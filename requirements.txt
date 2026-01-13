@@ -1,21 +1,7 @@
-# Core computation
-pandas
-numpy
-scikit-learn
-
-# Visualization
-matplotlib
-plotly
-
-# PDF and text generation
-fpdf2
-PyPDF2
-python-docx
-
-# Web + templating
-streamlit
-jinja2
-
-# Utility
-tqdm
-Pillow
+streamlit>=1.25.0
+pandas>=2.1.0
+numpy>=1.25.0
+matplotlib>=3.8.0
+fpdf2>=2.7.0
+tqdm>=4.66.0
+Pillow>=10.0.0
