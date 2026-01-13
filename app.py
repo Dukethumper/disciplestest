@@ -461,35 +461,54 @@ def value_to_label(item: Dict, val: int) -> str:
         return [L, f"Somewhat {L}", "Neutral", f"Somewhat {R}", R][idx]
     return ""
 
-# questionnaire UI
-responses: Dict[str,int] = {}
-scale_defaults = spec.get("scale", {"min":1,"max":7,"step":1})
+# ------------------ Questionnaire UI ------------------
+responses: Dict[str, int] = {}
+scale_defaults = spec.get("scale", {"min": 1, "max": 7, "step": 1})
+
 st.subheader("📝 Questionnaire")
+
 for it in shuffled:
     vmin = int(it.get("min", scale_defaults.get("min", 1)))
     vmax = int(it.get("max", scale_defaults.get("max", 7)))
     step = int(it.get("step", scale_defaults.get("step", 1)))
     default_val = vmin + ((vmax - vmin) // (2 * step)) * step
+
     c1, c2 = st.columns([2, 3])
-    with c1: st.markdown(f"**{it['text']}**")
+
+    # Left column: Question text
+    with c1:
+        st.markdown(f"**{it['text']}**")
+
+    # Right column: Slider + labels
     with c2:
         cur = st.session_state.get(it["id"], default_val)
         curr_label = value_to_label(it, cur)
-        if curr_label:
-            st.markdown(f"<div style='font-size:0.9rem;opacity:.8;margin-bottom:-0.5rem'><b>{curr_label}</b></div>", unsafe_allow_html=True)
-        elif it.get("L") or it.get("R"):
-            st.markdown(f"<div style='font-size:0.9rem;opacity:.7;margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>", unsafe_allow_html=True)
-        val = st.slider(
-    label="Select your response",  # required non-empty label
-    min_value=vmin,
-    max_value=vmax,
-    step=step,
-    value=cur,
-    key=it["id"],
-    label_visibility="collapsed",  # hides the label visually but satisfies Streamlit
-    help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')} ↔ {it.get('R','')}"
-)
 
+        # Show current label or side anchors
+        if curr_label:
+            st.markdown(
+                f"<div style='font-size:0.9rem;opacity:.8;margin-bottom:-0.5rem'><b>{curr_label}</b></div>",
+                unsafe_allow_html=True,
+            )
+        elif it.get("L") or it.get("R"):
+            st.markdown(
+                f"<div style='font-size:0.9rem;opacity:.7;margin-bottom:-0.5rem'><b>{it.get('L','')}</b></div>",
+                unsafe_allow_html=True,
+            )
+
+        # ✅ Fixed slider with visible label compliance
+        val = st.slider(
+            label="Select your response",               # non-empty label required
+            min_value=vmin,
+            max_value=vmax,
+            step=step,
+            value=cur,
+            key=it["id"],
+            label_visibility="collapsed",               # hides label visually
+            help=None if not (it.get("L") or it.get("R")) else f"{it.get('L','')} ↔ {it.get('R','')}",
+        )
+
+    # Divider between questions
     st.divider()
     responses[it["id"]] = val
 
@@ -761,6 +780,7 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
 
