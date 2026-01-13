@@ -218,6 +218,16 @@ def derive_orientations(ps: Dict[str,float]) -> None:
     if np.isnan(ps.get("Surrender", np.nan)):
         ps["Surrender"] = float(np.nanmean([ps.get(m, np.nan) for m in DEFAULT_DOMAIN_MAP["Integrative"]]))
 
+  # confidence
+    si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
+    ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
+    si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
+    ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
+    if np.isnan(si_mean) or np.isnan(ssb_mean):
+        st.error("Missing Self Insight or Self Serving Bias items.")
+        st.stop()
+    C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
+
 # ------------------ Strategy subtype (top-2) ------------------
 BALANCE_DELTA = 0.08
 def quadrant_label_from_pair(a: str, b: str) -> str:
@@ -526,16 +536,6 @@ if st.button("Compute Results"):
         st.error(f"Missing responses for: {missing_dims}")
         st.stop()
 
-    # confidence
-    si_vals  = direct_values_for_dim(responses, spec, "Self_Insight")
-    ssb_vals = direct_values_for_dim(responses, spec, "Self_Serving_Bias")
-    si_mean  = float(np.mean(si_vals))  if si_vals  else np.nan
-    ssb_mean = float(np.mean(ssb_vals)) if ssb_vals else np.nan
-    if np.isnan(si_mean) or np.isnan(ssb_mean):
-        st.error("Missing Self Insight or Self Serving Bias items.")
-        st.stop()
-    C, C_level = compute_confidence_from_means(si_mean, ssb_mean)
-
     # strategy subtype
     str_means = {d: direct_mean_for_dim(responses, spec, d) for d in STRATEGIES}
     sub = strategy_subtype_from_means(str_means)
@@ -775,6 +775,7 @@ if HAS_REPORTLAB:
     st.download_button("📄 Download PDF report", data=pdf_bytes, file_name=f"{participant_id}_report.pdf", mime="application/pdf")
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
+
 
 
 
