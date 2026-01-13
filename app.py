@@ -703,9 +703,14 @@ if HAS_REPORTLAB:
 else:
     st.info("📄 PDF export disabled (install `reportlab`).")
 
+# ============================================================
+# 📘 Full Personality Report Generation
+# ============================================================
 import streamlit as st
 from modules.web_integration import generate_user_report
 
+# This assumes you already created `user_test_results`
+# earlier in the script (a dict of the user’s final scores)
 if "user_test_results" in locals() or "user_test_results" in globals():
     st.markdown("---")
     st.subheader("📘 Generate Your Full Personality Report")
@@ -715,8 +720,20 @@ if "user_test_results" in locals() or "user_test_results" in globals():
             pdf_path, txt_path = generate_user_report(user_test_results, mode="full")
 
         with open(pdf_path, "rb") as f:
-            st.download_button("Download Full Report (PDF)", f, file_name="Personality_Report.pdf")
+            st.download_button(
+                "⬇️ Download Full Report (PDF)",
+                f,
+                file_name="Personality_Report.pdf",
+                mime="application/pdf",
+            )
+
         with open(txt_path, "r") as f:
-            st.download_button("Download Text Version (.txt)", f, file_name="Personality_Report.txt")
+            st.download_button(
+                "⬇️ Download Text Version (.txt)",
+                f,
+                file_name="Personality_Report.txt",
+                mime="text/plain",
+            )
+
 
 
