@@ -201,6 +201,7 @@ I struggle to let go of control even when I know it’s necessary. [LABELS=Compl
 I feel most aligned when effort and surrender work together. [LABELS=Completely Untrue of Me|Mostly Untrue of Me|Somewhat Untrue of Me|Neutral|Somewhat True of Me|Mostly True of Me|Completely True of Me]
 I can accept uncertainty without feeling helpless. [LABELS=Completely Untrue of Me|Mostly Untrue of Me|Somewhat Untrue of Me|Neutral|Somewhat True of Me|Mostly True of Me|Completely True of Me]
 I find that life works best when I stop forcing results. [LABELS=Completely Untrue of Me|Mostly Untrue of Me|Somewhat Untrue of Me|Neutral|Somewhat True of Me|Mostly True of Me|Completely True of Me]
+I can remain steady and present even when I have no control over what happens next. [LABELS=Completely Untrue of Me|Mostly Untrue of Me|Somewhat Untrue of Me|Neutral|Somewhat True of Me|Mostly True of Me|Completely True of Me]
 
 Relational:
 
@@ -234,5 +235,6 @@ I'm aware of my emotions as they arise. [LABELS=Never|Rarely|Occasionally|Someti
 I can admit when I'm wrong or when I need to improve. [LABELS=Completely Untrue of Me|Mostly Untrue of Me|Somewhat Untrue of Me|Neutral|Somewhat True of Me|Mostly True of Me|Completely True of Me]
 I can recognize patterns in how I respond to challenges or stress. [LABELS=Completely Untrue of Me|Mostly Untrue of Me|Somewhat Untrue of Me|Neutral|Somewhat True of Me|Mostly True of Me|Completely True of Me]
 I often notice how my emotions influence the way I treat others. [LABELS=Never|Rarely|Occasionally|Sometimes|Often|Usually|Always]
+
 
 
